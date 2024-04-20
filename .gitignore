@@ -1,3 +1,7 @@
 /target
+*.wav
+*.mp3
+/src/config/config.json
 /src/recording.wav
 /src/wake_recording.wav
+/models

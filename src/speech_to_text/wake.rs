@@ -1,9 +1,9 @@
 use crate::{config::*, utils::read_wav_file, speech_to_text::run_whisper};
 use regex::Regex;
-use whisper_rs::{WhisperContext, FullParams};
+use simple_transcribe_rs::transcriber::Transcriber;
 
-pub fn check_word(whisper : &mut WhisperContext, data : Vec<f32>, config : Config) -> bool{    
-    let transcript = match run_whisper(whisper, &data, true){
+pub fn check_word(trans : &Transcriber, path : String, config : Config) -> bool{    
+    let transcript = match run_whisper(trans, path, true){
         Ok(x) => x,
         Err(..) => return false,
     };

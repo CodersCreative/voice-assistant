@@ -13,7 +13,7 @@ use ollama_rs::Ollama;
 use std::time::{Duration, SystemTime};
 use tts::Tts;
 use voice_assistant_rs::beep::beep;
-
+use simple_transcribe_rs::transcriber::Transcriber;
 #[tokio::main]
 async fn main() {
     let mut ollama = get_model();
@@ -25,7 +25,7 @@ async fn main() {
 
     let config = Root::load(config_path).unwrap().config;
     
-    let (mut whisper_tiny , mut whisper_base) = create_model(config.clone());
+    let mut whisper = create_model(config.clone()).await;
 
     let mut found = false;
 
@@ -35,7 +35,7 @@ async fn main() {
             let now = SystemTime::now(); 
             let ai = run_ollama(user, &mut ollama, &config.clone().models.llm_model.model).await;
             if let Ok(elapsed) = now.elapsed(){
-                println!("\nChatbot time: {:?}", elapsed.as_millis());
+                println!("\nChatbot time: {:?}", elapsed.as_secs());
             }
 
             if let Ok(ai) = ai{
@@ -46,25 +46,26 @@ async fn main() {
             }
         }else{
             if found{
-                found = word_found(&mut whisper_base, &mut ollama, &mut tts_model, config.clone()).await;
+                found = word_found(&whisper, &mut ollama, &mut tts_model, config.clone()).await;
             }else{
-                found = word_not_found(&mut whisper_tiny, config.clone());
+                found = word_not_found(config.clone());
             }
         }
     }
 }
 
-pub async fn word_found(whisper : &mut WhisperContext, ollama : &mut Ollama, model : &mut Tts, config : Config) -> bool{
+pub async fn word_found(trans_main : &Transcriber, ollama : &mut Ollama, model : &mut Tts, config : Config) -> bool{
     beep();
 
-    let data = match activated_record(config.clone()){
-        Ok(x) => x,
+    let recording = activated_record(config.clone());
+    let path = match recording.0{
+        Ok(x) => recording.1,
         Err(..) => return true,
     };
     
     beep();
 
-    let transcript = match run_whisper(whisper, &data, false){
+    let transcript = match run_whisper(trans_main, path.to_string(), false){
         Ok(x) => x,
         Err(..) => return true,
     };
@@ -87,11 +88,6 @@ pub async fn word_found(whisper : &mut WhisperContext, ollama : &mut Ollama, mod
     return false;
 }
 
-pub fn word_not_found(whisper : &mut WhisperContext, config : Config) -> bool{
-    let data = match wake_record(config.clone()){
-        Ok(x) => x,
-        Err(..) => return false,
-    };
-
-    return check_word(whisper, data, config);
+pub fn word_not_found(config : Config) -> bool{
+    return wake_record(config.clone()).0;
 }

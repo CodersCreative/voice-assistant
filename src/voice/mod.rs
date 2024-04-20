@@ -10,8 +10,9 @@ use cpal::{FromSample, Sample};
 use std::fs::File;
 use std::io::BufWriter;
 use std::sync::{Arc, Mutex};
+use rustpotter::{Rustpotter, RustpotterConfig};
 
-pub fn activated_record(config: Config) -> Result<Vec<f32>, String>{
+pub fn activated_record(config: Config) -> (Result<bool, String>, String){
     let path = get_path(config.file_paths.recording_file);
     let settings = config.recording_settings.main_settings;
     
@@ -21,10 +22,10 @@ pub fn activated_record(config: Config) -> Result<Vec<f32>, String>{
         None
     };
 
-    return record(max, settings.silent_secs as f32, &path, settings.silence_start as i32, settings.audio_channels as u16, settings.rate as u32);
+    return (record(max, settings.silent_secs as f32, &path, settings.silence_start as i32, settings.audio_channels as u16, settings.rate as u32, false), path);
 }
 
-pub fn wake_record(config: Config) -> Result<Vec<f32>, String>{
+pub fn wake_record(config: Config) -> (bool, String){
     let path = get_path(config.file_paths.wake_file);
     let settings = config.recording_settings.wake_settings;
     let max = if settings.max_secs > 0{
@@ -33,7 +34,10 @@ pub fn wake_record(config: Config) -> Result<Vec<f32>, String>{
         None
     };
 
-    return record(max, settings.silent_secs as f32, &path, settings.silence_start as i32, settings.audio_channels as u16, settings.rate as u32);
+    return (match record(max, settings.silent_secs as f32, &path, settings.silence_start as i32, settings.audio_channels as u16, settings.rate as u32, true){
+        Ok(x) => x,
+        Err(..) => false
+    }, path);
 }
 
 fn sample_format(format: cpal::SampleFormat) -> hound::SampleFormat {
@@ -71,14 +75,35 @@ where
 }
 
 pub fn record(
-    max_seconds : Option<i32>, timeout : f32, path : &str, silence : i32, channels : u16, sample_rate : u32
-) -> Result<Vec<f32>, String> {
+    max_seconds : Option<i32>, timeout : f32, path : &str, silence : i32, channels : u16, sample_rate : u32, wake_word : bool,
+) -> Result<bool, String> {
     let silence = silence / 2;
     let host = cpal::default_host();
     let device = match host.default_input_device(){
         Some(x) => x,
         None => return Err("No devices.".to_string()),
     };
+
+    let rustpotter_config = if wake_word{
+        let mut def = RustpotterConfig::default();
+        def.fmt.sample_rate = sample_rate as usize;
+        def.fmt.sample_format = rustpotter::SampleFormat::F32;
+        def.fmt.channels = channels.clone();
+        def.detector.threshold = 0.2;
+        Some(def)
+    }else{
+        None
+    };
+
+    let mut rustpotter_model = match rustpotter_config{
+        Some(x) => match Rustpotter::new(&x){
+            Ok(mut y) => {y.add_wakeword_from_file("wakeword_key", &get_path("voice/alexa.rpw".to_string())).unwrap(); Some(y)},
+            Err(e) => return Err(e.to_string()),
+        },
+        None => None,
+    };
+
+
 
     
     let (sound_sender, sound_receiver) = channel();
@@ -93,9 +118,6 @@ pub fn record(
         Err(e) => return Err(e.to_string()),
     };
     let writer = Arc::new(Mutex::new(Some(writer)));
-    let writer_2 = writer.clone();
-    // A flag to indicate that recording is in progress.
-    println!("Begin recording...");
 
     // Run the input stream on a separate thread.
     let writer_2 = writer.clone();
@@ -125,23 +147,19 @@ pub fn record(
 
     return match stream.play() {
         Ok(()) => {
-            let denoised_stream = start(
+            let found = match start(
                 &sound_receiver,
                 silence,
                 timeout,
                 max_seconds,
-            )?;
-            let audio_buf = denoised_stream
-                .into_iter()
-                .map(|a| (a * i16::MAX as f32) as f32)
-                .collect::<Vec<f32>>();
+                &mut rustpotter_model,
+            ){
+                Ok(x) => x,
+                Err(..) => false, 
+            };
 
-            writer.lock().unwrap().take().unwrap().finalize();
-            println!("Stopped Recording");
-            match read_wav_file(path){
-                Ok(x) => Ok(x),
-                Err(e) => Err(e.to_string()),
-            }
+            let _= writer.lock().unwrap().take().unwrap().finalize();
+            return Ok(found);
         }
         Err(err) => {
             Err(err.to_string())
@@ -154,18 +172,27 @@ fn start(
     silence_level: i32,
     pause_length: f32,
     max_seconds : Option<i32>,
-) -> Result<Vec<f32>, String> {
+    spotter : &mut Option<Rustpotter>
+) -> Result<bool, String> {
     let mut silence_start = None;
-    let mut sound_from_start_till_pause = vec![];
+    let mut sound_from_start_till_pause : Vec<f32> = Vec::new();
     let now = Instant::now();
     loop {
         if let Some(max) = max_seconds{
             if now.elapsed().as_secs() >= max as u64{
-                return Ok(sound_from_start_till_pause);
+                return Ok(false);
             }
         }
         let small_sound_chunk = sound_receiver.recv().unwrap();
         sound_from_start_till_pause.extend(&small_sound_chunk);
+        if let Some(s) = spotter{
+
+            let detection = s.process_samples(sound_from_start_till_pause.clone());
+            if let Some(detection) = detection {
+                println!("{:?}", detection);
+                return Ok(true);
+            }
+        }
         let sound_as_ints = small_sound_chunk.iter().map(|f| (*f * 1000.0) as i32);
         let max_amplitude = sound_as_ints.clone().max().unwrap_or(0);
         let min_amplitude = sound_as_ints.clone().min().unwrap_or(0);
@@ -175,7 +202,7 @@ fn start(
                 None => silence_start = Some(Instant::now()),
                 Some(s) => {
                     if s.elapsed().as_secs_f32() > pause_length {
-                        return Ok(sound_from_start_till_pause);
+                        return Ok(false);
                     }
                 }
             }

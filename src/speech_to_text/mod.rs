@@ -1,39 +1,14 @@
-use whisper_rs::{WhisperContext, WhisperContextParameters, FullParams, SamplingStrategy};
+use simple_transcribe_rs::transcriber::Transcriber;
+use whisper_rs::{FullParams, SamplingStrategy};
+use simple_transcribe_rs::model_handler;
+use simple_transcribe_rs::transcriber;
 use crate::{config::Config, utils::get_path};
 use std::time::Instant;
-use self::wake::WakeWords;
 pub mod wake;
 
-pub fn create_model(config : Config) -> (WhisperContext, WhisperContext){
-    let whisper_tiny = get_path("speech_to_text/ggml-tiny.en-q8_0.bin".to_string());
-    let mut whisper_base = get_path("speech_to_text/ggml-base.en-q5_1.bin".to_string());
-
-    //let whisper_tiny = get_path("speech_to_text/ggml-base.en-q5_1.bin".to_string());
-    //let mut whisper_base = get_path("speech_to_text/ggml-base-fp16.bin".to_string());
-    
-    let have_base = config.models.stt_models.main_model.contains_wake_words(vec!["base".to_string()]);
-    
-    let gpu = match config.models.stt_models.compute_type.to_lowercase().as_str(){
-        "cpu" => false,
-        _ => true,
-    }; 
-    // load a context and model
-    return (
-        WhisperContext::new_with_params(
-            &whisper_tiny,
-            WhisperContextParameters{use_gpu:gpu}
-        ).expect("failed to load model"),
-        match have_base{
-            true => WhisperContext::new_with_params(
-                &whisper_base,
-                WhisperContextParameters{use_gpu:gpu}
-            ).expect("failed to load model"),
-            false => WhisperContext::new_with_params(
-                &whisper_tiny,
-                WhisperContextParameters{use_gpu:gpu}
-            ).expect("failed to load model"),
-        },
-    );
+pub async fn create_model(config : Config) -> Transcriber{
+    let m =  model_handler::ModelHandler::new(&config.models.stt_models.main_model, "models/").await;
+    return transcriber::Transcriber::new(m);
 }
 
 pub fn set_params(params : &mut FullParams){    
@@ -47,44 +22,20 @@ pub fn set_params(params : &mut FullParams){
     
 }
 
-pub fn run_whisper(context : &mut WhisperContext, audio_data : &Vec<f32>, is_beam : bool) -> Result<String, String>{
-    let state = context.create_state();
+pub fn run_whisper(trans : &Transcriber, path : String, is_wake : bool) -> Result<String, String>{
     
     let mut params = FullParams::new(SamplingStrategy::BeamSearch { beam_size: 5, patience: 1.0 });
-
-    //if !is_beam{
-        //params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
-    //}
     set_params(&mut params);
-    
-    if let Ok(mut state) = state{
-        let now = Instant::now(); 
-        let r = state.full(params, audio_data);
-         if r.is_err(){
-             return Err("Failed to run.".to_string());
-         }
-         println!("STT time : {}", now.elapsed().as_secs());
-         
-         let num_segments = match state.full_n_segments(){
-             Ok(x) => x,
-             Err(e) => return Err("Failed to get segments".to_string()),
-         };
+    let now = Instant::now();
+    let result = trans.transcribe(&path, Some(params));
+    println!("STT Time: {}", now.elapsed().as_secs());
 
-         let mut text = String::new();
-
-         for i in 0..num_segments{
-             let segment = state.full_get_segment_text(i);
-             if let Ok(segment) = segment{
-                 text.push_str(&segment);
-             }
-         }
-
-         println!(">>> {}", text);
-
-         return Ok(text);
+    if let Ok(result) = result{
+        println!(">>> {}", result.get_text());
+        return Ok(result.get_text().to_string());
     }
-    
-    return Err("Failed to run.".to_string());
+
+    return Err(result.unwrap_err().to_string());
 }
 
 
