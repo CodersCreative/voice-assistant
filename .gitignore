@@ -2,6 +2,7 @@
 *.wav
 *.mp3
 /src/config/config.json
-/src/recording.wav
-/src/wake_recording.wav
+/src/recording
+/src/wake_recording
 /models
+/audio
