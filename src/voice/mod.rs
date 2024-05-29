@@ -1,6 +1,6 @@
-use crate::{config::*, utils::*};
+use crate::{config::Config, utils::get_path};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::{SampleRate, SupportedBufferSize, SupportedStreamConfig, SupportedStreamConfigsError};
+use cpal::{SampleRate, SupportedStreamConfig};
 use std::{
     ops::Neg,
     sync::mpsc::{channel, Receiver},
@@ -10,29 +10,28 @@ use cpal::{FromSample, Sample};
 use std::fs::File;
 use std::io::BufWriter;
 use std::sync::{Arc, Mutex};
-use rustpotter::{Rustpotter, RustpotterConfig};
+use rustpotter::{Rustpotter, RustpotterConfig, ScoreMode};
 
 pub fn activated_record(config: Config) -> (Result<bool, String>, String){
     let path = get_path(config.file_paths.recording_file);
     let settings = config.recording_settings.main_settings;
-    
-    let max = if settings.max_secs > 0{
-        Some(settings.max_secs as i32)
-    }else{
-        None
-    };
+    let max = get_max(settings.max_secs as i32);
 
     return (record(max, settings.silent_secs as f32, &path, settings.silence_start as i32, settings.audio_channels as u16, settings.rate as u32, false), path);
+}
+
+fn get_max(num : i32) -> Option<i32>{
+    return if num > 0{
+        Some(num)
+    }else{
+        None
+    }; 
 }
 
 pub fn wake_record(config: Config) -> (bool, String){
     let path = get_path(config.file_paths.wake_file);
     let settings = config.recording_settings.wake_settings;
-    let max = if settings.max_secs > 0{
-        Some(settings.max_secs as i32)
-    }else{
-        None
-    };
+    let max = get_max(settings.max_secs as i32);
 
     return (match record(max, settings.silent_secs as f32, &path, settings.silence_start as i32, settings.audio_channels as u16, settings.rate as u32, true){
         Ok(x) => x,
@@ -74,9 +73,24 @@ where
     }
 }
 
-pub fn record(
-    max_seconds : Option<i32>, timeout : f32, path : &str, silence : i32, channels : u16, sample_rate : u32, wake_word : bool,
-) -> Result<bool, String> {
+pub fn get_rustpotter_config(sample_rate : u32, channels : u16) -> RustpotterConfig{
+    let mut rustpotter_config = RustpotterConfig::default();
+    rustpotter_config.detector.threshold = 0.45;
+    rustpotter_config.detector.avg_threshold = 0.0;
+    rustpotter_config.detector.min_scores = 10;
+    rustpotter_config.detector.eager = true;
+    rustpotter_config.detector.score_ref = 0.22;
+    rustpotter_config.fmt.sample_rate = sample_rate as usize;
+    rustpotter_config.fmt.sample_format = rustpotter::SampleFormat::F32;
+    rustpotter_config.fmt.channels = channels.clone();
+    rustpotter_config.detector.score_mode = ScoreMode::Max;
+    rustpotter_config.filters.band_pass.enabled = false;
+    rustpotter_config.filters.gain_normalizer.enabled = false;
+    
+    return rustpotter_config;
+}
+
+pub fn record(max_seconds : Option<i32>, timeout : f32, path : &str, silence : i32, channels : u16, sample_rate : u32, wake_word : bool) -> Result<bool, String> {
     let silence = silence / 2;
     let host = cpal::default_host();
     let device = match host.default_input_device(){
@@ -84,33 +98,23 @@ pub fn record(
         None => return Err("No devices.".to_string()),
     };
 
-    let rustpotter_config = if wake_word{
-        let mut def = RustpotterConfig::default();
-        def.fmt.sample_rate = sample_rate as usize;
-        def.fmt.sample_format = rustpotter::SampleFormat::F32;
-        def.fmt.channels = channels.clone();
-        def.detector.threshold = 0.2;
-        Some(def)
-    }else{
-        None
-    };
+    let rustpotter_config = get_rustpotter_config(sample_rate, channels);    
+    let mut rustpotter = Rustpotter::new(&rustpotter_config)?;
+    rustpotter.add_wakeword_from_file("hey", &get_path("voice/sade.rpw".to_string())).unwrap();
 
-    let mut rustpotter_model = match rustpotter_config{
-        Some(x) => match Rustpotter::new(&x){
-            Ok(mut y) => {y.add_wakeword_from_file("wakeword_key", &get_path("voice/alexa.rpw".to_string())).unwrap(); Some(y)},
-            Err(e) => return Err(e.to_string()),
-        },
-        None => None,
-    };
-
-
-
-    
     let (sound_sender, sound_receiver) = channel();
     let mut stream_config = match device.default_input_config(){
         Ok(x) => x,
         Err(e) => return Err(e.to_string()),
     };
+
+    stream_config = SupportedStreamConfig::new(
+        channels,
+        SampleRate(sample_rate),
+        *stream_config.clone().buffer_size(),
+        stream_config.clone().sample_format(),
+    );
+    
 
     let spec = wav_spec_from_config(&stream_config);
     let writer = match hound::WavWriter::create(path, spec){
@@ -119,16 +123,10 @@ pub fn record(
     };
     let writer = Arc::new(Mutex::new(Some(writer)));
 
-    // Run the input stream on a separate thread.
     let writer_2 = writer.clone();
     println!("Started Recording");
 
-    stream_config = SupportedStreamConfig::new(
-        channels,
-        SampleRate(sample_rate),
-        *stream_config.clone().buffer_size(),
-        stream_config.clone().sample_format(),
-    );
+
 
     let stream = device.build_input_stream(
         &stream_config.into(),
@@ -136,7 +134,7 @@ pub fn record(
             sound_sender.send(data.to_owned());
             write_input_data::<f32, f32>(data, &writer_2)
         },
-        move |err| {},
+        move |_| {},
         None,
     );
 
@@ -152,13 +150,15 @@ pub fn record(
                 silence,
                 timeout,
                 max_seconds,
-                &mut rustpotter_model,
+                &mut rustpotter,
+                wake_word
             ){
                 Ok(x) => x,
                 Err(..) => false, 
             };
 
             let _= writer.lock().unwrap().take().unwrap().finalize();
+            println!("finished");
             return Ok(found);
         }
         Err(err) => {
@@ -172,36 +172,44 @@ fn start(
     silence_level: i32,
     pause_length: f32,
     max_seconds : Option<i32>,
-    spotter : &mut Option<Rustpotter>
+    spotter : &mut Rustpotter,
+    is_wake : bool
 ) -> Result<bool, String> {
     let mut silence_start = None;
     let mut sound_from_start_till_pause : Vec<f32> = Vec::new();
     let now = Instant::now();
     loop {
         if let Some(max) = max_seconds{
-            if now.elapsed().as_secs() >= max as u64{
+            if now.elapsed().as_secs() >= max as u64 && !is_wake{
                 return Ok(false);
             }
         }
+
         let small_sound_chunk = sound_receiver.recv().unwrap();
         sound_from_start_till_pause.extend(&small_sound_chunk);
-        if let Some(s) = spotter{
 
-            let detection = s.process_samples(sound_from_start_till_pause.clone());
+        if is_wake && sound_from_start_till_pause.len() >= spotter.get_samples_per_frame(){
+            let detection = spotter.process_samples(sound_from_start_till_pause.drain(0..spotter.get_samples_per_frame()).as_slice().into());
             if let Some(detection) = detection {
                 println!("{:?}", detection);
                 return Ok(true);
             }
         }
+
+        if is_wake{
+            continue;
+        }
+
         let sound_as_ints = small_sound_chunk.iter().map(|f| (*f * 1000.0) as i32);
         let max_amplitude = sound_as_ints.clone().max().unwrap_or(0);
         let min_amplitude = sound_as_ints.clone().min().unwrap_or(0);
         let silence_detected = max_amplitude < silence_level && min_amplitude > silence_level.neg();
+        
         if silence_detected {
             match silence_start {
                 None => silence_start = Some(Instant::now()),
                 Some(s) => {
-                    if s.elapsed().as_secs_f32() > pause_length {
+                    if s.elapsed().as_secs_f32() > pause_length && !is_wake {
                         return Ok(false);
                     }
                 }
@@ -211,5 +219,3 @@ fn start(
         }
     }
 }
-
-

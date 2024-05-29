@@ -1,18 +1,3 @@
-use crate::{config::*, utils::read_wav_file, speech_to_text::run_whisper};
-use regex::Regex;
-use simple_transcribe_rs::transcriber::Transcriber;
-
-pub fn check_word(trans : &Transcriber, path : String, config : Config) -> bool{    
-    let transcript = match run_whisper(trans, path, true){
-        Ok(x) => x,
-        Err(..) => return false,
-    };
-    
-    let wake_words = config.wake_words;  // Assuming get_config() returns a HashMap
-    let is_activated = transcript.contains_wake_words(wake_words);
-    return is_activated;
-}
-
 pub trait WakeWords{
     fn contains_wake_words(&self, words : Vec<String>) -> bool;
 }

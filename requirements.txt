@@ -1,0 +1,6 @@
+faster_whisper
+torch
+gtts
+git+https://github.com/huggingface/parler-tts.git
+transformers
+soundfile

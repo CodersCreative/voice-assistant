@@ -2,6 +2,7 @@ use serde::{Serialize, Deserialize};
 use std::fs::File;
 use std::io::Read;
 use serde_json;
+
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Root {

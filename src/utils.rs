@@ -1,8 +1,5 @@
-
-use std::fs::File;
-use std::i16;
 use std::io::{self, Write};
-use hound::{WavReader, WavSamples};
+use hound::WavReader;
 use std::error::Error;
 use regex::Regex;
 
@@ -26,31 +23,26 @@ pub fn write_read(message: String) -> String {
 
 pub fn write_read_line(message: String) -> String{
     print!("{}", message);
-    io::stdout().flush().unwrap();  // Flush to display the prompt
+    io::stdout().flush().unwrap();
     let mut input = String::new();
     io::stdin().read_line(&mut input).unwrap();
     return input;
 }
 
 pub fn read_wav_file(path: &str) -> Result<Vec<f32>, Box<dyn Error>> {
-  let mut reader = WavReader::open(path).unwrap();
+    let mut reader = WavReader::open(path).unwrap();
+    let mut f32_samples: Vec<f32> = Vec::new();
 
-  //let samples = reader.samples();
-  let mut f32_samples: Vec<f32> = Vec::new();
-
-  // Convert i16 samples to f32
-    reader.samples::<f32>()
-                        .for_each(|s| {
+    reader.samples::<f32>().for_each(|s| {
         let sample = s.unwrap() as f32;
         f32_samples.push(sample);
     });
-  
+
     Ok(f32_samples)
 }
 
 pub fn get_path(path : String) -> String{
     let mut new_path = env!("CARGO_MANIFEST_DIR").to_string();
-    // The WAV file we're recording to.
     new_path.push_str(&format!("/src/{}", path));
     return new_path;
 }

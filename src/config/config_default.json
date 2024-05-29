@@ -24,21 +24,7 @@
             "output_file" : "ai_output",
             "beep_file" : "./sound_effects/beep.mp3"
         },
-        "wake_words" : [
-            "seid", "sate", 
-            "kate", "seat", 
-            "feeds", "seeds", 
-            "feed", "see", 
-            "seed", "sade", 
-            "cade", "sad", 
-            "shade", "say", 
-            "said", "sades", 
-            "fades", "paid", 
-            "see it", "suede",
-            "suit", "saint",
-            "faint", "fade",
-            "sid"
-        ],
+        "wake_words" : [],
         "recording_settings": {
             "general": {
                 "chunk_size" : 1024
@@ -46,7 +32,7 @@
             "wake_settings": {
                 "rate" : 16000,
                 "silent_secs" : 2,
-                "max_secs" : 10,
+                "max_secs" : 0,
                 "audio_channels" : 1,
                 "vad_filter" : true,
                 "silence_start" : 2000,

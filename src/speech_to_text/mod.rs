@@ -1,10 +1,12 @@
+pub mod wake;
+pub mod faster_whisper;
+
 use simple_transcribe_rs::transcriber::Transcriber;
 use whisper_rs::{FullParams, SamplingStrategy};
-use simple_transcribe_rs::model_handler;
-use simple_transcribe_rs::transcriber;
-use crate::{config::Config, utils::get_path};
+use simple_transcribe_rs::{transcriber, model_handler};
+use crate::config::Config;
 use std::time::Instant;
-pub mod wake;
+use crate::speech_to_text::faster_whisper::FWhisperModel;
 
 pub async fn create_model(config : Config) -> Transcriber{
     let m =  model_handler::ModelHandler::new(&config.models.stt_models.main_model, "models/").await;
@@ -12,7 +14,6 @@ pub async fn create_model(config : Config) -> Transcriber{
 }
 
 pub fn set_params(params : &mut FullParams){    
-    
     params.set_n_threads(2);
     params.set_language(Some("en"));
     params.set_print_special(false);
@@ -22,12 +23,24 @@ pub fn set_params(params : &mut FullParams){
     
 }
 
-pub fn run_whisper(trans : &Transcriber, path : String, is_wake : bool) -> Result<String, String>{
-    
+pub fn run_whisper(trans : &Transcriber, fwhisper : &FWhisperModel, path : String, use_faster : bool, vad : bool) -> Result<String, String>{
+    if use_faster{
+        let now = Instant::now();
+        let transcript = fwhisper.transcribe(vad, path.clone());
+        
+        if let Some(transcript) = transcript{
+            return Ok(transcript);
+        }
+
+        println!("STT Time: {}", now.elapsed().as_secs());
+    }
+
     let mut params = FullParams::new(SamplingStrategy::BeamSearch { beam_size: 5, patience: 1.0 });
     set_params(&mut params);
+    
     let now = Instant::now();
     let result = trans.transcribe(&path, Some(params));
+
     println!("STT Time: {}", now.elapsed().as_secs());
 
     if let Ok(result) = result{
