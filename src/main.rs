@@ -1,7 +1,7 @@
 use voice_assistant_rs::speech_to_text::wake::{WakeWords};
-use voice_assistant_rs::speech_to_text::{create_model, run_whisper, faster_whisper};
+use voice_assistant_rs::speech_to_text::{create_model, run_whisper};
+use faster_whisper_rs::WhisperModel as FWhisperModel;
 use voice_assistant_rs::llm::{get_model, run_ollama};
-use voice_assistant_rs::text_to_speech::{say, Model, TtsModels};
 use voice_assistant_rs::utils::{get_path, remove_text_in_brackets, write_read_line};
 use voice_assistant_rs::voice::{activated_record, wake_record};
 use voice_assistant_rs::config::{Config, Root};
@@ -10,20 +10,30 @@ use ollama_rs::Ollama;
 use std::time::SystemTime;
 use voice_assistant_rs::beep::beep;
 use simple_transcribe_rs::transcriber::Transcriber;
+use natural_tts::*;
+use tts::Tts;
 
 
-async fn set_up_whisper(config : Config) -> (faster_whisper::FWhisperModel, Transcriber){
+async fn set_up_whisper(config : Config) -> (FWhisperModel, Transcriber){
     let whisper = create_model(config.clone()).await;
-    let fwhisper = faster_whisper::FWhisperModel::new(config.clone()).unwrap();
+    let model = config.models.stt_models.main_model.clone();
+    let device = config.models.stt_models.device.clone();
+    let compute = config.models.stt_models.compute_type.clone();
+    let fwhisper = FWhisperModel::new(model, device, compute).unwrap();
     
     return (fwhisper, whisper);
 }
 
-fn set_up_tts(config : Config) -> (TtsModels ,Model){
-    let tts_model = Model::Gtts;
-    let mut tts_models = TtsModels::new(config.clone());
+fn set_up_tts(config : Config) -> NaturalTts{
 
-    return (tts_models, tts_model);
+    let mut tts_models = natural_tts::NaturalTtsBuilder::default()
+        .default_model(natural_tts::Model::Gtts)
+        .gtts_model(natural_tts::models::gtts::GttsModel::default())
+        .parler_model(natural_tts::models::parler::ParlerModel::default())
+        .tts_model(natural_tts::models::tts_rs::TtsModel::default())
+        .build().unwrap();
+
+    return tts_models;
 }
 
 fn get_config() -> Config{
@@ -35,7 +45,7 @@ async fn main() {
     let mut ollama = get_model();
     let config = get_config();
     let (fwhisper, whisper) = set_up_whisper(config.clone()).await; 
-    let (mut tts_models, tts_model) = set_up_tts(config.clone());
+    let mut tts_models = set_up_tts(config.clone());
 
     let mut found = false;
 
@@ -50,20 +60,21 @@ async fn main() {
 
             if let Ok(ai) = ai{
                 println!("\n>>> {}", ai);
-                say(&mut tts_models,ai.clone(), &tts_model);
+                tts_models.say_auto(ai.clone());
+                //say(&mut tts_models,ai.clone(), &tts_model);
             }else{
                 println!("{}", ai.unwrap_err());
             }
         }else{
             found = match found{
-                true => word_found(&whisper, &fwhisper, &mut ollama, &mut tts_models, config.clone(), &tts_model).await,
+                true => word_found(&whisper, &fwhisper, &mut ollama, &mut tts_models, config.clone()).await,
                 false => word_not_found(config.clone()),
             };
         }
     }
 }
 
-pub async fn word_found(trans_main : &Transcriber, fwhisper : &faster_whisper::FWhisperModel, ollama : &mut Ollama, tts_models : &mut TtsModels,config : Config, tts_model : &Model) -> bool{
+pub async fn word_found(trans_main : &Transcriber, fwhisper : &FWhisperModel, ollama : &mut Ollama, tts_models : &mut NaturalTts,config : Config) -> bool{
     beep();
 
     let recording = activated_record(config.clone());
@@ -84,7 +95,8 @@ pub async fn word_found(trans_main : &Transcriber, fwhisper : &faster_whisper::F
 
         if let Ok(ai) = ai.clone(){
             println!("\n{}", ai.clone());
-            say(tts_models, ai, tts_model);
+
+            tts_models.say_auto(ai.clone());
         }else{
             println!("\n{}", ai.unwrap_err());
             return false;

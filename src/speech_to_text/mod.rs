@@ -1,12 +1,11 @@
 pub mod wake;
-pub mod faster_whisper;
 
 use simple_transcribe_rs::transcriber::Transcriber;
 use whisper_rs::{FullParams, SamplingStrategy};
 use simple_transcribe_rs::{transcriber, model_handler};
 use crate::config::Config;
 use std::time::Instant;
-use crate::speech_to_text::faster_whisper::FWhisperModel;
+use faster_whisper_rs::WhisperModel as FWhisperModel;
 
 pub async fn create_model(config : Config) -> Transcriber{
     let m =  model_handler::ModelHandler::new(&config.models.stt_models.main_model, "models/").await;
@@ -28,7 +27,7 @@ pub fn run_whisper(trans : &Transcriber, fwhisper : &FWhisperModel, path : Strin
         let now = Instant::now();
         let transcript = fwhisper.transcribe(vad, path.clone());
         
-        if let Some(transcript) = transcript{
+        if let Ok(transcript) = transcript{
             return Ok(transcript);
         }
 
