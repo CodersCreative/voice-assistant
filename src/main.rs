@@ -26,10 +26,14 @@ async fn set_up_whisper(config : Config) -> (FWhisperModel, Transcriber){
 
 fn set_up_tts(config : Config) -> NaturalTts{
 
+    let desc = "A female speaker in fast calming voice in a quiet environment".to_string();
+    let model = "parler-tts/parler-tts-mini-expresso".to_string();
+    let parler = natural_tts::models::parler::ParlerModel::new(desc, model, false);
+
     let mut tts_models = natural_tts::NaturalTtsBuilder::default()
         .default_model(natural_tts::Model::Gtts)
         .gtts_model(natural_tts::models::gtts::GttsModel::default())
-        .parler_model(natural_tts::models::parler::ParlerModel::default())
+        .parler_model(parler.unwrap())
         .tts_model(natural_tts::models::tts_rs::TtsModel::default())
         .build().unwrap();
 
