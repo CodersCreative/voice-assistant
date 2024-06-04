@@ -1,4 +1,5 @@
 use serde::{Serialize, Deserialize};
+use std::error::Error;
 use std::fs::File;
 use std::io::Read;
 use serde_json;
@@ -24,23 +25,12 @@ pub struct Config {
 }
 
 impl Root{
-    pub fn load(path : String) -> Result<Self, String>{
-        let mut reader = File::open(path);
+    pub fn load(path : String) -> Result<Self, Box<dyn Error>>{
+        let mut reader = File::open(path)?;
+        let mut data = String::new();
+        let _ = reader.read_to_string(&mut data)?;
 
-        if let Ok(mut reader) = reader{
-            
-            let mut data = String::new();
-            let _ = reader.read_to_string(&mut data).unwrap();
-
-            let de_data = serde_json::from_str(&data);
-
-            return match de_data{
-                Ok(x) => Ok(x),
-                Err(e) => Err(e.to_string()),
-            }
-        }
-
-        return Err("Failed to open file".to_string());
+        Ok(serde_json::from_str(&data)?)
     }
 }
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]

@@ -8,6 +8,12 @@ impl WakeWords for String{
     }
 }
 
+impl WakeWords for str{
+    fn contains_wake_words(&self, words : Vec<String>) -> bool{
+        return words.iter().any(|word| self.trim().to_lowercase().contains(&word.to_lowercase()));
+    }
+}
+
 #[test]
 fn test_wake_words(){
     let wake_words = vec!["Sade".to_string(), "Said".to_string()];

@@ -4,7 +4,7 @@ use simple_transcribe_rs::transcriber::Transcriber;
 use whisper_rs::{FullParams, SamplingStrategy};
 use simple_transcribe_rs::{transcriber, model_handler};
 use crate::config::Config;
-use std::time::Instant;
+use std::{error::Error, time::Instant};
 use faster_whisper_rs::WhisperModel as FWhisperModel;
 
 pub async fn create_model(config : Config) -> Transcriber{
@@ -22,10 +22,10 @@ pub fn set_params(params : &mut FullParams){
     
 }
 
-pub fn run_whisper(trans : &Transcriber, fwhisper : &FWhisperModel, path : String, use_faster : bool, vad : bool) -> Result<String, String>{
+pub fn run_whisper(trans : &Transcriber, fwhisper : &FWhisperModel, path : &str, use_faster : bool, vad : bool) -> Result<String, Box<dyn Error>>{
     if use_faster{
         let now = Instant::now();
-        let transcript = fwhisper.transcribe(vad, path.clone());
+        let transcript = fwhisper.transcribe(vad, path.to_string());
         
         if let Ok(transcript) = transcript{
             return Ok(transcript);
@@ -38,16 +38,12 @@ pub fn run_whisper(trans : &Transcriber, fwhisper : &FWhisperModel, path : Strin
     set_params(&mut params);
     
     let now = Instant::now();
-    let result = trans.transcribe(&path, Some(params));
+    let result = trans.transcribe(path, Some(params))?;
 
     println!("STT Time: {}", now.elapsed().as_secs());
 
-    if let Ok(result) = result{
-        println!(">>> {}", result.get_text());
-        return Ok(result.get_text().to_string());
-    }
-
-    return Err(result.unwrap_err().to_string());
+    println!(">>> {}", result.get_text());
+    return Ok(result.get_text().to_string());
 }
 
 

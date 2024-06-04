@@ -3,34 +3,32 @@ use hound::WavReader;
 use std::error::Error;
 use regex::Regex;
 
-pub fn remove_text_in_brackets(text: &str) -> String {
-  let re = Regex::new(r"[\[\]\(\)]+").unwrap();
-  re.replace_all(text, "").to_string()
+pub fn remove_text_in_brackets(text: &str) -> Result<String, Box<dyn Error>> {
+    let re = Regex::new(r"[\[\]\(\)]+")?;
+    Ok(re.replace_all(text, "").to_string())
 }
 
-pub fn read_input() -> String {
+pub fn read_input() -> Result<String, Box<dyn Error>> {
     let mut input = String::new();
-    std::io::stdin()
-        .read_line(&mut input)
-        .expect("Failed to read line");
-    return input;
+    std::io::stdin().read_line(&mut input)?;
+    Ok(input)
 }
 
-pub fn write_read(message: String) -> String {
+pub fn write_read(message: String) -> Result<String, Box<dyn Error>> {
     println!("{}", message);
-    return read_input();
+    read_input()
 }
 
-pub fn write_read_line(message: String) -> String{
+pub fn write_read_line(message: String) -> Result<String, Box<dyn Error>>{
     print!("{}", message);
-    io::stdout().flush().unwrap();
+    io::stdout().flush()?;
     let mut input = String::new();
-    io::stdin().read_line(&mut input).unwrap();
-    return input;
+    io::stdin().read_line(&mut input)?;
+    Ok(input)
 }
 
 pub fn read_wav_file(path: &str) -> Result<Vec<f32>, Box<dyn Error>> {
-    let mut reader = WavReader::open(path).unwrap();
+    let mut reader = WavReader::open(path)?;
     let mut f32_samples: Vec<f32> = Vec::new();
 
     reader.samples::<f32>().for_each(|s| {

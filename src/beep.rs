@@ -1,26 +1,27 @@
+use std::error::Error;
+
 use cpal::{
     traits::{DeviceTrait, HostTrait, StreamTrait},
     FromSample, Sample, SizedSample,
 };
 
 
-pub fn beep(){
+pub fn beep() -> Result<(), Box<dyn Error>>{
     let host = cpal::default_host();
 
     let device = match host.default_output_device(){
         Some(x) => x,
-        None => return,
+        None => return Err("Failed to find default output device".into()),
     };
 
-    let config = match device.default_output_config(){
-        Ok(x) => x,
-        Err(..) => return,
-    };
+    let config = device.default_output_config()?;
 
     let _ = run::<f32>(&device, &config.into());
+
+    Ok(())
 }
 
-pub fn run<T>(device: &cpal::Device, config: &cpal::StreamConfig) -> Result<(), String>
+pub fn run<T>(device: &cpal::Device, config: &cpal::StreamConfig) -> Result<(), Box<dyn Error>>
 where
     T: SizedSample + FromSample<f32>,
 {
@@ -35,18 +36,14 @@ where
 
     let err_fn = |err| eprintln!("an error occurred on stream: {}", err);
 
-    let stream = match device.build_output_stream(
+    let stream = device.build_output_stream(
         config,
         move |data: &mut [T], _: &cpal::OutputCallbackInfo| {
             write_data(data, channels, &mut next_value)
         },
         err_fn,
         None,
-    ){
-        Ok(x) => x,
-        Err(e) => return Err(e.to_string()),
-    };
-    
+    )?;    
     let _ = stream.play();
 
     std::thread::sleep(std::time::Duration::from_millis(1000));
