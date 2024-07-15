@@ -1233,9 +1233,9 @@ checksum = "af9673d8203fcb076b19dfd17e38b3d4ae9f44959416ea532ce72415a6020365"
 [[package]]
 name = "faster-whisper-rs"
 version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c72faf4c45c71c4c5e9d979ac214728ff3150226e0e0828b331c296e4e729669"
+source = "git+https://github.com/CodersCreative/faster-whisper-rs#d394ce91f6c9130aa78413deddbe7d61459e5ce0"
 dependencies = [
+ "derive_builder",
  "pyo3",
 ]
 

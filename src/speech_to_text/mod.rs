@@ -22,17 +22,24 @@ pub fn set_params(params : &mut FullParams){
     
 }
 
-pub fn run_whisper(trans : &Transcriber, fwhisper : &FWhisperModel, path : &str, use_faster : bool, vad : bool) -> Result<String, Box<dyn Error>>{
+pub fn run_whisper(trans : &Option<Transcriber>, fwhisper : &Option<FWhisperModel>, path : &str, use_faster : bool, vad : bool) -> Result<String, Box<dyn Error>>{
     if use_faster{
-        let now = Instant::now();
-        let transcript = fwhisper.transcribe(vad, path.to_string());
-        
-        if let Ok(transcript) = transcript{
-            return Ok(transcript);
-        }
+        if let Some(fwhisper) = fwhisper{
+            let now = Instant::now();
+            let transcript = fwhisper.transcribe(path.to_string());
+            
+            if let Ok(transcript) = transcript{
+                return Ok(transcript.to_string());
+            }
 
-        println!("STT Time: {}", now.elapsed().as_secs());
+            println!("STT Time: {}", now.elapsed().as_secs());
+        }
     }
+
+    let trans = match trans{
+        Some(x) => x,
+        None => return Err("No STT Model".into()),
+    };
 
     let mut params = FullParams::new(SamplingStrategy::BeamSearch { beam_size: 5, patience: 1.0 });
     set_params(&mut params);
